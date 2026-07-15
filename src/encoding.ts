@@ -26,6 +26,31 @@ export function utf8ToBase64(text: string): string {
   return bytesToBase64(new TextEncoder().encode(text))
 }
 
+/** base64 -> текст UTF-8 (для предпросмотра вставленной base64-строки). */
+export function base64ToUtf8(b64: string): string {
+  return new TextDecoder('utf-8').decode(base64ToBytes(b64))
+}
+
+/**
+ * Убирает переносы/пробелы из base64. Плагин и внешние системы часто отдают
+ * base64 в столбик по 64 символа — на подпись должна уходить одна строка.
+ */
+export function normalizeBase64(b64: string): string {
+  return b64.replace(/\s+/g, '')
+}
+
+/** Проверка, что строка — корректный base64 (после нормализации). */
+export function isValidBase64(b64: string): boolean {
+  const s = normalizeBase64(b64)
+  if (!s || s.length % 4 !== 0 || !/^[A-Za-z0-9+/]+={0,2}$/.test(s)) return false
+  try {
+    atob(s)
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Скачать данные как файл. */
 export function downloadBytes(bytes: Uint8Array | string, filename: string, mime = 'application/octet-stream') {
   const blobPart = typeof bytes === 'string' ? bytes : (bytes.buffer as ArrayBuffer)

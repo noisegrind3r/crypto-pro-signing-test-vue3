@@ -168,7 +168,8 @@ export async function signDetachedCadesBes(
       plugin.CADESCOM_CADES_BES ?? CADESCOM_CADES_BES,
       true
     )
-    return signature
+    // Плагин отдаёт base64, разбитый CRLF по 64 символа — склеиваем в одну строку.
+    return signature.replace(/\s+/g, '')
   } catch (e) {
     throw new Error(describeError(e))
   } finally {

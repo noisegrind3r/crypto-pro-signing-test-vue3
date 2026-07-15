@@ -1,7 +1,15 @@
 <script setup lang="ts">
 import { onMounted, ref, computed } from 'vue'
 import { checkEnvironment, getCertificates, signDetachedCadesBes, type CertificateInfo } from './useCryptoPro'
-import { base64ToBytes, bytesToBase64, downloadBytes, utf8ToBase64 } from './encoding'
+import {
+  base64ToBytes,
+  base64ToUtf8,
+  bytesToBase64,
+  downloadBytes,
+  isValidBase64,
+  normalizeBase64,
+  utf8ToBase64
+} from './encoding'
 
 type Status = 'idle' | 'loading' | 'ok' | 'error'
 
@@ -13,11 +21,12 @@ const certificates = ref<CertificateInfo[]>([])
 const certsStatus = ref<Status>('idle')
 const selectedThumbprint = ref('')
 
-// Источник данных: вставленный XML или загруженный файл.
-const inputMode = ref<'text' | 'file'>('text')
+// Источник данных: вставленный XML, загруженный файл или готовая base64-строка XML.
+const inputMode = ref<'text' | 'file' | 'base64'>('text')
 const xmlText = ref(SAMPLE_XML())
 const fileName = ref('')
 const fileBase64 = ref('') // base64 байтов загруженного файла
+const pastedBase64 = ref('') // base64 XML, пришедший из внешней системы — уходит на подпись как есть
 
 const signStatus = ref<Status>('idle')
 const signError = ref('')
@@ -32,7 +41,20 @@ const canSign = computed(
 // base64 байтов, которые реально уйдут на подпись.
 const currentContentBase64 = computed(() => {
   if (inputMode.value === 'file') return fileBase64.value
+  if (inputMode.value === 'base64') return pastedBase64Valid.value ? normalizeBase64(pastedBase64.value) : ''
   return xmlText.value ? utf8ToBase64(xmlText.value) : ''
+})
+
+// Вставленную base64 не перекодируем — подписываем ровно те байты, что в ней закодированы.
+// Поэтому только валидируем и показываем предпросмотр, чтобы было видно, что подписываем.
+const pastedBase64Valid = computed(() => isValidBase64(pastedBase64.value))
+const pastedBase64Preview = computed(() => {
+  if (!pastedBase64Valid.value) return ''
+  try {
+    return base64ToUtf8(pastedBase64.value)
+  } catch {
+    return ''
+  }
 })
 
 onMounted(async () => {
@@ -162,12 +184,29 @@ function SAMPLE_XML() {
       <div class="tabs">
         <button :class="{ active: inputMode === 'text' }" @click="inputMode = 'text'">Вставить XML</button>
         <button :class="{ active: inputMode === 'file' }" @click="inputMode = 'file'">Загрузить файл</button>
+        <button :class="{ active: inputMode === 'base64' }" @click="inputMode = 'base64'">Вставить base64</button>
       </div>
       <textarea v-if="inputMode === 'text'" v-model="xmlText" rows="10" spellcheck="false"></textarea>
-      <div v-else class="field">
+      <div v-else-if="inputMode === 'file'" class="field">
         <input type="file" accept=".xml,text/xml,application/xml" @change="onFilePicked" />
         <span v-if="fileName" class="muted"> {{ fileName }} ({{ base64ToBytes(fileBase64).length }} байт)</span>
       </div>
+      <template v-else>
+        <textarea
+          v-model="pastedBase64"
+          rows="6"
+          spellcheck="false"
+          placeholder="base64 XML-титула, как его отдаёт epl-integration"
+        ></textarea>
+        <div v-if="pastedBase64 && !pastedBase64Valid" class="err">✘ Это не корректная base64-строка.</div>
+        <div v-else-if="pastedBase64Valid" class="muted">
+          ✔ {{ base64ToBytes(pastedBase64).length }} байт — подписываются как есть, без перекодирования.
+        </div>
+        <template v-if="pastedBase64Preview">
+          <label class="muted">Предпросмотр (декодировано как UTF-8):</label>
+          <textarea readonly rows="8" spellcheck="false" :value="pastedBase64Preview"></textarea>
+        </template>
+      </template>
       <p class="note">
         ⚠ Подпись отделённая — считается от точных байтов этих данных. В боевом потоке XML должен приходить
         из epl-integration байт-в-байт; переформатировать его после подписи нельзя.
